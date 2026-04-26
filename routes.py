@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, Header, HTTPException
-from jose import jwt, JWTError
+import jwt
 from sqlalchemy.orm import Session
 
 from . import models, schemas
@@ -21,9 +21,12 @@ def verify_token(authorization: Optional[str] = Header(None)) -> dict:
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Not authenticated")
     token = authorization.split(" ")[1]
+    return decode_token(token)
+
+def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
