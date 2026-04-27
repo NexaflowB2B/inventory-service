@@ -1,5 +1,5 @@
 import os
-from typing import List, Optional
+from typing import Annotated, List, Optional
 
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, Header, HTTPException
@@ -31,8 +31,12 @@ def decode_token(token: str) -> dict:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
 
+DbSession = Annotated[Session, Depends(get_db)]
+UserPayload = Annotated[dict, Depends(verify_token)]
+
+
 @router.get("/products", response_model=List[schemas.ProductOut])
-def get_products(db: Session = Depends(get_db), user: dict = Depends(verify_token)):
+def get_products(db: DbSession, user: UserPayload):
     user_id = str(user.get("sub", "1"))
     # Admin sees all? Optional, but keeping strict isolation
     if user.get("role") == "admin":
@@ -41,7 +45,7 @@ def get_products(db: Session = Depends(get_db), user: dict = Depends(verify_toke
 
 
 @router.post("/products", response_model=schemas.ProductOut, status_code=201)
-def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db), user: dict = Depends(verify_token)):
+def create_product(product: schemas.ProductCreate, db: DbSession, user: UserPayload):
     new_product = models.Product(
         name=product.name,
         description=product.description,
@@ -55,8 +59,15 @@ def create_product(product: schemas.ProductCreate, db: Session = Depends(get_db)
     return new_product
 
 
-@router.put("/products/{product_id}", response_model=schemas.ProductOut)
-def update_product(product_id: int, product: schemas.ProductCreate, db: Session = Depends(get_db), user: dict = Depends(verify_token)):
+@router.put(
+    "/products/{product_id}",
+    response_model=schemas.ProductOut,
+    responses={
+        403: {"description": "Not authorized to edit this product"},
+        404: {"description": "Product not found"},
+    },
+)
+def update_product(product_id: int, product: schemas.ProductCreate, db: DbSession, user: UserPayload):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
@@ -69,8 +80,14 @@ def update_product(product_id: int, product: schemas.ProductCreate, db: Session 
     return db_product
 
 
-@router.delete("/products/{product_id}")
-def delete_product(product_id: int, db: Session = Depends(get_db), user: dict = Depends(verify_token)):
+@router.delete(
+    "/products/{product_id}",
+    responses={
+        403: {"description": "Not authorized to delete this product"},
+        404: {"description": "Product not found"},
+    },
+)
+def delete_product(product_id: int, db: DbSession, user: UserPayload):
     db_product = db.query(models.Product).filter(models.Product.id == product_id).first()
     if not db_product:
         raise HTTPException(status_code=404, detail="Product not found")
